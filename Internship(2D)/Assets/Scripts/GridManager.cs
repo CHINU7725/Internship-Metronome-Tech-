@@ -10,9 +10,12 @@ public class GridManager2D : MonoBehaviour
     public int columns = 3;
     public Color targetColor = Color.red;
     public float colorTransitionSpeed = 1.0f;
+    public AudioSource audio;
 
     private List<GameObject> instantiatedObjects = new List<GameObject>();
     private List<GameObject> coloredObjects = new List<GameObject>();
+
+    private GameObject largestColoredObject = null;
 
     void Start()
     {
@@ -41,11 +44,13 @@ public class GridManager2D : MonoBehaviour
         GameObject child = Instantiate(childPrefabs[randomIndex], parent.transform);
         float randomScale = Random.Range(0.5f, 2f);
         child.transform.localScale = Vector3.one * randomScale;
+
         if (child.transform.localScale.y > parent.transform.localScale.y)
         {
             StartCoroutine(LerpColor(parent.GetComponent<SpriteRenderer>(), targetColor, parent, child));
         }
     }
+
     IEnumerator LerpColor(SpriteRenderer spriteRenderer, Color targetColor, GameObject parent, GameObject child)
     {
         Color startColor = spriteRenderer.color;
@@ -57,24 +62,74 @@ public class GridManager2D : MonoBehaviour
             spriteRenderer.color = Color.Lerp(startColor, targetColor, elapsedTime);
             yield return null;
         }
+
         coloredObjects.Add(parent);
-        CompareAndDestroy(child);
+        UpdateLargestColoredObject(parent, child);
+        CompareAndDestroyAdjacent(child);
     }
-    void CompareAndDestroy(GameObject currentChild)
+
+    void UpdateLargestColoredObject(GameObject parent, GameObject child)
     {
-        for (int i = coloredObjects.Count - 1; i >= 0; i--)
+        if (largestColoredObject == null || child.transform.localScale.y > largestColoredObject.transform.GetChild(0).localScale.y)
         {
-            GameObject obj = coloredObjects[i];
-            if (obj.transform.childCount > 0)
+            largestColoredObject = parent;
+        }
+    }
+
+    void CompareAndDestroyAdjacent(GameObject currentChild)
+    {
+        if (largestColoredObject == null) return;
+
+        Vector2 largestPosition = largestColoredObject.transform.position;
+        GameObject largestChild = largestColoredObject.transform.GetChild(0).gameObject;
+
+        foreach (GameObject obj in coloredObjects)
+        {
+            if (obj != null && obj.transform.childCount > 0)
             {
                 GameObject objChild = obj.transform.GetChild(0).gameObject;
-                if (objChild.transform.localScale.y < currentChild.transform.localScale.y)
+                Vector2 objPosition = obj.transform.position;
+
+                
+                if (IsAdjacent(largestPosition, objPosition) && objChild.transform.localScale.y < currentChild.transform.localScale.y)
                 {
                     Destroy(objChild);
-                    coloredObjects.RemoveAt(i);
+                    RotateChildToCover(largestChild, largestPosition, objPosition);
                 }
             }
         }
+    }
+
+    bool IsAdjacent(Vector2 pos1, Vector2 pos2)
+    {
+        return (Mathf.Abs(pos1.x - pos2.x) == 1 && pos1.y == pos2.y) || 
+               (Mathf.Abs(pos1.y - pos2.y) == 1 && pos1.x == pos2.x);   
+    }
+
+    void RotateChildToCover(GameObject child, Vector2 largestPosition, Vector2 destroyedPosition)
+    {
+        Vector3 rotationAxis = Vector3.forward;
+        Vector2 direction = destroyedPosition - largestPosition;
+
+        if (direction.x == 1) 
+        {
+            child.transform.RotateAround(largestPosition, rotationAxis, -90f);
+        }
+        else if (direction.x == -1) 
+        {
+            child.transform.RotateAround(largestPosition, rotationAxis, 90f);
+        }
+        else if (direction.y == 1) 
+        {
+            child.transform.RotateAround(largestPosition, rotationAxis, 180f);
+        }
+        else if (direction.y == -1) 
+        {
+            
+            child.transform.RotateAround(largestPosition, rotationAxis, 0f);
+        }
+
+        child.transform.position = (largestPosition + destroyedPosition) / 2;
     }
 
     public void ClearGrid()
@@ -85,10 +140,12 @@ public class GridManager2D : MonoBehaviour
         }
         instantiatedObjects.Clear();
         coloredObjects.Clear();
+        largestColoredObject = null;
     }
 
     public void RegenerateGrid()
     {
+        audio.Play();
         ClearGrid();
         CreateGrid();
     }
